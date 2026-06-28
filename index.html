@@ -1,36 +1,359 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Snake Garden Explorer</title>
-  <link rel="stylesheet" href="style.css" />
+    <meta charset="UTF-8">
+    <title>Infinite Wilds - Procedural 3D Open World</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: Arial, sans-serif; }
+        canvas { display: block; }
+        #ui {
+            position: absolute; top: 10px; left: 10px; color: white; pointer-events: none;
+            text-shadow: 0 0 5px black;
+        }
+        #crosshair { position: absolute; top: 50%; left: 50%; font-size: 30px; transform: translate(-50%, -50%); pointer-events: none; }
+        #instructions {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.7); color: white; padding: 10px 20px; border-radius: 8px;
+            text-align: center; pointer-events: none;
+        }
+        #ammo { position: absolute; bottom: 80px; right: 20px; color: white; font-size: 24px; }
+    </style>
 </head>
 <body>
-  <div id="game-shell">
-    <canvas id="worldCanvas"></canvas>
-    <div id="hud">
-      <div class="stats">
-        <div>Health: <span id="healthValue">100</span>%</div>
-        <div>Friends: <span id="snakeCount">0</span></div>
-        <div>Speed: <span id="speedValue">Normal</span></div>
-      </div>
-      <div id="message">Explore the endless snake garden. Use arrow keys or WASD to move.</div>
-      <div class="controls">
-        <button id="audioButton">Enable Sound</button>
-        <button id="resetButton">Reset Adventure</button>
-      </div>
+    <div id="ui">
+        <div>INFINITE WILDS</div>
+        <div>WASD - Move | Mouse - Look | Click - Shoot | R - Reload</div>
     </div>
+    <div id="crosshair">+</div>
+    <div id="ammo">Ammo: <span id="ammoCount">30</span>/∞</div>
     <div id="instructions">
-      <h1>Snake Garden Explorer</h1>
-      <p>Discover an endless world of flowers, streams, caves, and gentle snakes. Friendly snakes heal you and help chase away mean snakes.</p>
-      <p>Follow the glowing surprises and listen for the soft woodland sounds.</p>
-      <ul>
-        <li><strong>Move:</strong> Arrow keys or WASD</li>
-        <li><strong>Goal:</strong> Explore forever, heal with nice snakes, and survive mean snake bites</li>
-      </ul>
+        Click to lock pointer and start walking<br>
+        Explore the endless wilderness • Hunt animals for points
     </div>
-  </div>
-  <script src="game.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/controls/PointerLockControls.min.js"></script>
+
+    <script>
+        // Simple noise function (simplex-like)
+        function noise(x, z) {
+            let n = Math.sin(x * 0.1) + Math.sin(z * 0.1) + 
+                    Math.sin((x + z) * 0.05) * 2;
+            return n * 8;
+        }
+
+        let scene, camera, renderer, controls;
+        let move = { forward: false, backward: false, left: false, right: false };
+        let velocity = new THREE.Vector3();
+        let direction = new THREE.Vector3();
+        let animals = [];
+        let trees = [];
+        let chunks = new Map();
+        let playerPosition = new THREE.Vector3(0, 10, 0);
+        let score = 0;
+        let ammo = 30;
+        const CHUNK_SIZE = 64;
+        const RENDER_DISTANCE = 3;
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x88ccff, 100, 600);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x88ccff);
+            document.body.appendChild(renderer.domElement);
+
+            // Lighting
+            const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambient);
+            const sun = new THREE.DirectionalLight(0xffeecc, 1);
+            sun.position.set(50, 100, 30);
+            scene.add(sun);
+
+            // Ground material
+            const groundMat = new THREE.MeshLambertMaterial({ color: 0x3a5f3a });
+
+            // Controls
+            controls = new THREE.PointerLockControls(camera, document.body);
+            
+            document.addEventListener('click', () => {
+                controls.lock();
+            });
+
+            controls.addEventListener('lock', () => {
+                document.getElementById('instructions').style.display = 'none';
+            });
+
+            controls.addEventListener('unlock', () => {
+                document.getElementById('instructions').style.display = 'block';
+            });
+
+            // Keyboard controls
+            document.addEventListener('keydown', e => {
+                switch(e.code) {
+                    case 'KeyW': move.forward = true; break;
+                    case 'KeyS': move.backward = true; break;
+                    case 'KeyA': move.left = true; break;
+                    case 'KeyD': move.right = true; break;
+                    case 'KeyR': ammo = 30; updateAmmo(); break;
+                }
+            });
+
+            document.addEventListener('keyup', e => {
+                switch(e.code) {
+                    case 'KeyW': move.forward = false; break;
+                    case 'KeyS': move.backward = false; break;
+                    case 'KeyA': move.left = false; break;
+                    case 'KeyD': move.right = false; break;
+                }
+            });
+
+            // Mouse shoot
+            document.addEventListener('mousedown', e => {
+                if (controls.isLocked && e.button === 0) shoot();
+            });
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            // Initial chunk
+            generateChunk(0, 0);
+            
+            // Spawn some initial animals
+            for(let i = 0; i < 8; i++) {
+                spawnAnimal(Math.random()*100 - 50, Math.random()*100 - 50);
+            }
+
+            camera.position.set(0, 12, 30);
+            animate();
+        }
+
+        function getChunkKey(x, z) {
+            return `${Math.floor(x / CHUNK_SIZE)},${Math.floor(z / CHUNK_SIZE)}`;
+        }
+
+        function generateChunk(cx, cz) {
+            const key = `${cx},${cz}`;
+            if (chunks.has(key)) return;
+            
+            const chunkGroup = new THREE.Group();
+            
+            // Terrain mesh
+            const geometry = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, 32, 32);
+            geometry.rotateX(-Math.PI / 2);
+            
+            const vertices = geometry.attributes.position.array;
+            for (let i = 0; i < vertices.length; i += 3) {
+                const x = vertices[i];
+                const z = vertices[i + 2];
+                const worldX = cx * CHUNK_SIZE + x;
+                const worldZ = cz * CHUNK_SIZE + z;
+                vertices[i + 1] = noise(worldX, worldZ);
+            }
+            geometry.computeVertexNormals();
+            
+            const terrain = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ 
+                color: 0x2d4a2d,
+                flatShading: true
+            }));
+            terrain.position.set(cx * CHUNK_SIZE, 0, cz * CHUNK_SIZE);
+            chunkGroup.add(terrain);
+            
+            // Trees
+            for (let i = 0; i < 25; i++) {
+                const tx = cx * CHUNK_SIZE + Math.random() * CHUNK_SIZE;
+                const tz = cz * CHUNK_SIZE + Math.random() * CHUNK_SIZE;
+                const height = noise(tx, tz);
+                if (Math.random() > 0.4) {
+                    createTree(tx, height + 1, tz, chunkGroup);
+                }
+            }
+            
+            // Paths / rocks
+            if (Math.random() > 0.6) {
+                const rock = new THREE.Mesh(
+                    new THREE.SphereGeometry(2 + Math.random() * 3, 8, 8),
+                    new THREE.MeshLambertMaterial({ color: 0x555555 })
+                );
+                rock.position.set(
+                    cx * CHUNK_SIZE + CHUNK_SIZE/2 + (Math.random()-0.5)*CHUNK_SIZE,
+                    2,
+                    cz * CHUNK_SIZE + CHUNK_SIZE/2 + (Math.random()-0.5)*CHUNK_SIZE
+                );
+                chunkGroup.add(rock);
+            }
+            
+            scene.add(chunkGroup);
+            chunks.set(key, chunkGroup);
+        }
+
+        function createTree(x, y, z, parent) {
+            // Trunk
+            const trunk = new THREE.Mesh(
+                new THREE.CylinderGeometry(1.2, 1.5, 8, 8),
+                new THREE.MeshLambertMaterial({ color: 0x8B4513 })
+            );
+            trunk.position.set(x, y + 4, z);
+            parent.add(trunk);
+            
+            // Leaves
+            const leaves = new THREE.Mesh(
+                new THREE.ConeGeometry(5, 9, 8),
+                new THREE.MeshLambertMaterial({ color: 0x0d6623 })
+            );
+            leaves.position.set(x, y + 12, z);
+            parent.add(leaves);
+            
+            trees.push({mesh: trunk, x, z});
+        }
+
+        function spawnAnimal(x, z) {
+            const height = noise(x, z) + 3;
+            const animal = new THREE.Group();
+            
+            // Body
+            const body = new THREE.Mesh(
+                new THREE.BoxGeometry(3, 2, 5),
+                new THREE.MeshLambertMaterial({ color: 0x8B4513 })
+            );
+            body.position.y = height + 2;
+            animal.add(body);
+            
+            // Head
+            const head = new THREE.Mesh(
+                new THREE.SphereGeometry(1.8, 8, 8),
+                new THREE.MeshLambertMaterial({ color: 0xA0522D })
+            );
+            head.position.set(0, 2.5, 2.5);
+            animal.add(head);
+            
+            animal.position.set(x, 0, z);
+            animal.userData = { 
+                velocity: new THREE.Vector3((Math.random()-0.5)*0.8, 0, (Math.random()-0.5)*0.8),
+                alive: true,
+                health: 3
+            };
+            
+            scene.add(animal);
+            animals.push(animal);
+        }
+
+        function shoot() {
+            if (ammo <= 0) return;
+            ammo--;
+            updateAmmo();
+            
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            
+            const intersects = raycaster.intersectObjects(scene.children, true);
+            
+            if (intersects.length > 0) {
+                let obj = intersects[0].object;
+                while (obj) {
+                    if (animals.includes(obj.parent)) {
+                        const animal = obj.parent;
+                        animal.userData.health--;
+                        if (animal.userData.health <= 0 && animal.userData.alive) {
+                            animal.userData.alive = false;
+                            score += 100;
+                            // Simple death animation
+                            animal.scale.set(0.6, 0.6, 0.6);
+                            setTimeout(() => {
+                                if (animal.parent) scene.remove(animal);
+                            }, 800);
+                        }
+                        break;
+                    }
+                    obj = obj.parent;
+                }
+            }
+        }
+
+        function updateAmmo() {
+            document.getElementById('ammoCount').textContent = ammo;
+        }
+
+        function updateChunks() {
+            const cx = Math.floor(camera.position.x / CHUNK_SIZE);
+            const cz = Math.floor(camera.position.z / CHUNK_SIZE);
+            
+            for (let x = cx - RENDER_DISTANCE; x <= cx + RENDER_DISTANCE; x++) {
+                for (let z = cz - RENDER_DISTANCE; z <= cz + RENDER_DISTANCE; z++) {
+                    generateChunk(x, z);
+                }
+            }
+            
+            // Cleanup far chunks (optional, simplified)
+        }
+
+        function updateAnimals(delta) {
+            for (let i = animals.length - 1; i >= 0; i--) {
+                const a = animals[i];
+                if (!a.userData.alive) continue;
+                
+                // Wander
+                a.position.x += a.userData.velocity.x * delta * 12;
+                a.position.z += a.userData.velocity.z * delta * 12;
+                
+                // Stay near ground
+                const groundY = noise(a.position.x, a.position.z) + 2;
+                a.position.y = groundY;
+                
+                // Bounce off edges loosely
+                if (Math.random() < 0.02) {
+                    a.userData.velocity.x = (Math.random() - 0.5) * 1.2;
+                    a.userData.velocity.z = (Math.random() - 0.5) * 1.2;
+                }
+                
+                // Respawn distant animals
+                const dx = a.position.x - camera.position.x;
+                const dz = a.position.z - camera.position.z;
+                if (dx * dx + dz * dz > 800 * 800) {
+                    scene.remove(a);
+                    animals.splice(i, 1);
+                    spawnAnimal(camera.position.x + (Math.random()-0.5)*300, camera.position.z + (Math.random()-0.5)*300);
+                }
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const delta = 0.016;
+            
+            if (controls.isLocked) {
+                direction.z = Number(move.forward) - Number(move.backward);
+                direction.x = Number(move.right) - Number(move.left);
+                direction.normalize();
+                
+                velocity.x = direction.x * 45 * delta;
+                velocity.z = direction.z * 45 * delta;
+                
+                controls.moveRight(velocity.x);
+                controls.moveForward(velocity.z);
+                
+                // Keep player above terrain
+                const terrainY = noise(camera.position.x, camera.position.z) + 8;
+                if (camera.position.y < terrainY) {
+                    camera.position.y = terrainY;
+                }
+                
+                updateChunks();
+                updateAnimals(delta);
+            }
+            
+            renderer.render(scene, camera);
+        }
+
+        // Start the game
+        init();
+    </script>
 </body>
 </html>
