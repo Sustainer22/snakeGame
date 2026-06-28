@@ -1,4 +1,3 @@
-// ==================== FULL MAIN.JS ====================
 let scene, camera, renderer, controls;
 let move = {f:false, b:false, l:false, r:false};
 let animals = [], chunks = new Map();
@@ -11,8 +10,7 @@ function noise(x, z) {
 function init() {
     console.log("=== Game initializing ===");
 
-    initAudio();
-    playAmbient();
+    // No audio
 
     scene = new THREE.Scene();
     scene.fog = new THREE.Fog(0x88aaff, 420, 1600);
@@ -123,25 +121,29 @@ function createVegetation(x, y, z, parent) {
         return;
     }
 
+    // Tall, skinny trunk for realistic trees
     if (cfg.trunkH) {
-        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(cfg.trunkR, cfg.trunkR*1.25, cfg.trunkH, 8), new THREE.MeshLambertMaterial({color: cfg.trunkC}));
+        const trunk = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.9, 1.2, cfg.trunkH, 8),
+            new THREE.MeshLambertMaterial({color: cfg.trunkC})
+        );
         trunk.position.set(x, y + cfg.trunkH/2, z);
         parent.add(trunk);
     }
 
-    const fmat = new THREE.MeshLambertMaterial({color: cfg.leafC});
+    const fmat = new THREE.MeshLambertMaterial({color: cfg.leafC || 0x2E8B57}); // Default green
     for (let i = 0; i < cfg.layers; i++) {
-        const radius = cfg.branchy ? 6.2 - i*1.3 : 6.8 - i*1.5;
+        const radius = cfg.branchy ? 6.5 - i*1.2 : 6.8 - i*1.4;
         const geo = cfg.branchy ? new THREE.SphereGeometry(radius, 8, 8) : new THREE.ConeGeometry(radius, 9, 8);
         const leaf = new THREE.Mesh(geo, fmat);
-        leaf.position.set(x + (Math.random()-0.5)*3, y + 9 + i*5.5, z + (Math.random()-0.5)*3);
+        leaf.position.set(x + (Math.random()-0.5)*2.5, y + cfg.trunkH - 4 + i*5, z + (Math.random()-0.5)*2.5);
         parent.add(leaf);
     }
 
     if (cfg.fruit) {
         for (let i = 0; i < 8; i++) {
             const f = new THREE.Mesh(new THREE.SphereGeometry(0.65,8,8), new THREE.MeshLambertMaterial({color:0xFF2222}));
-            f.position.set(x+(Math.random()-0.5)*8, y+13+Math.random()*7, z+(Math.random()-0.5)*8);
+            f.position.set(x+(Math.random()-0.5)*8, y + cfg.trunkH + Math.random()*6, z+(Math.random()-0.5)*8);
             parent.add(f);
         }
     }
@@ -151,7 +153,7 @@ function shoot() {
     if (ammo <= 0) return;
     ammo--;
     updateUI();
-    playGunshot();
+    // No gunshot sound
 
     const ray = new THREE.Raycaster();
     ray.setFromCamera(new THREE.Vector2(0,0), camera);
@@ -217,7 +219,7 @@ function animate() {
 
         const th = noise(camera.position.x, camera.position.z) + 10;
         if (camera.position.y < th) camera.position.y = th;
-        else if (camera.position.y > th + 6) camera.position.y -= 1.4;
+        else if (camera.position.y > th + 6) camera.position.y -= 1.6; // smoother descent
 
         updateChunks();
         updateAnimals(delta);
