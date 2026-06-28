@@ -28,48 +28,35 @@
             return Math.sin(x * 0.018) * 16 + Math.sin(z * 0.018) * 16 + Math.sin((x + z) * 0.009) * 11 + Math.sin(x * 0.055) * 4;
         }
 
-        let scene, camera, renderer, controls;
+        let scene, camera, renderer, controls, audioCtx;
         let move = {f:false, b:false, l:false, r:false};
         let animals = [], chunks = new Map();
         let score = 0, ammo = 30;
         const CHUNK_SIZE = 160, RENDER_DISTANCE = 8;
 
-        // === HIGHLY CONFIGURABLE VEGETATION SYSTEM ===
-        const vegetationTypes = {
-            evergreen: {
-                height: 18, trunkR: 1.4, trunkH: 12, trunkColor: 0x5C4033, foliageColor: 0x0F4C2B,
-                layers: 4, layerRadius: [6.5, 5.2, 4.0, 2.8], layerHeight: [7,6,5,4], layerOffset: [11,15,19,23]
-            },
-            maple: {
-                height: 14, trunkR: 1.7, trunkH: 9, trunkColor: 0x8B5A2B, foliageColor: 0xD94F2E,
-                layers: 3, layerRadius: [7.5, 6.0, 4.5], layerHeight: [6,5.5,4.5], layerOffset: [9,13,16.5]
-            },
-            fruitTree: {
-                height: 12, trunkR: 1.5, trunkH: 8, trunkColor: 0x6B4E3D, foliageColor: 0x2E8B57,
-                layers: 3, layerRadius: [5.8, 4.8, 3.5], layerHeight: [5.5,5,4], layerOffset: [8.5,12,15],
-                hasFruit: true
-            },
-            bush: {
-                height: 4.5, trunkR: 0.8, trunkH: 2.5, trunkColor: 0x4A3728, foliageColor: 0x1e5c2b,
-                layers: 2, layerRadius: [4.2, 3.0], layerHeight: [3.5, 2.8], layerOffset: [3,5.5]
-            },
-            rock: {
-                isRock: true, size: [3,2.5,4], color: 0x666666
-            }
+        // More distinct vegetation templates
+        const vegTypes = {
+            evergreen: {type:'cone', trunkR:1.4, trunkH:14, trunkC:0x5C4033, leafC:0x0F4C2B, layers:4, spread:0.9},
+            maple: {type:'broad', trunkR:1.6, trunkH:11, trunkC:0x8B5A2B, leafC:0xC23D2E, layers:3, spread:1.4, branchy:true},
+            fruit: {type:'broad', trunkR:1.5, trunkH:9, trunkC:0x6B4E3D, leafC:0x2E8B57, layers:3, spread:1.1, fruit:true},
+            bush: {type:'bush', trunkR:0, trunkH:0, leafC:0x1e5c2b, layers:3, spread:1.6}
         };
 
         function init() {
-            scene = new THREE.Scene(); scene.fog = new THREE.Fog(0x88aaff, 420, 1600);
-            camera = new THREE.PerspectiveCamera(68, innerWidth/innerHeight, 0.1, 3000);
+            scene = new THREE.Scene(); scene.fog = new THREE.Fog(0x88aaff, 380, 1550);
+            camera = new THREE.PerspectiveCamera(68, innerWidth/innerHeight, 0.1, 2800);
             renderer = new THREE.WebGLRenderer({antialias:true});
             renderer.setSize(innerWidth, innerHeight); renderer.setClearColor(0x88aaff);
             document.body.appendChild(renderer.domElement);
 
-            scene.add(new THREE.AmbientLight(0xffffff, 0.72));
-            const sun = new THREE.DirectionalLight(0xffeedd, 1.15); sun.position.set(100,160,70); scene.add(sun);
+            scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+            const sun = new THREE.DirectionalLight(0xffeedd, 1.2); sun.position.set(110,165,75); scene.add(sun);
+
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
             controls = new THREE.PointerLockControls(camera, document.body);
             document.addEventListener('click', () => controls.lock());
+
             controls.addEventListener('lock', () => document.getElementById('instructions').style.display='none');
             controls.addEventListener('unlock', () => document.getElementById('instructions').style.display='block');
 
@@ -87,8 +74,8 @@
             window.addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
             generateChunk(0,0);
-            for(let i=0; i<16; i++) {
-                const d=80+Math.random()*170, a=Math.random()*Math.PI*2;
+            for(let i=0;i<16;i++) {
+                const d=70+Math.random()*180, a=Math.random()*Math.PI*2;
                 spawnAnimal(Math.cos(a)*d, Math.sin(a)*d);
             }
 
@@ -104,22 +91,17 @@
             const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, 52, 52);
             geo.rotateX(-Math.PI/2);
             const verts = geo.attributes.position.array;
-            for(let i=0; i<verts.length; i+=3) {
-                const wx = verts[i] + cx*CHUNK_SIZE;
-                const wz = verts[i+2] + cz*CHUNK_SIZE;
-                verts[i+1] = noise(wx, wz);
+            for(let i=0;i<verts.length;i+=3) {
+                const wx=verts[i]+cx*CHUNK_SIZE, wz=verts[i+2]+cz*CHUNK_SIZE;
+                verts[i+1] = noise(wx,wz);
             }
             geo.computeVertexNormals();
-            const terrain = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({color:0x336633}));
-            terrain.position.set(cx*CHUNK_SIZE, 0, cz*CHUNK_SIZE);
-            group.add(terrain);
+            group.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({color:0x336633})));
 
-            for(let i=0; i<12; i++) {  // More vegetation
+            for(let i=0;i<14;i++) {
                 const tx = cx*CHUNK_SIZE + Math.random()*CHUNK_SIZE;
                 const tz = cz*CHUNK_SIZE + Math.random()*CHUNK_SIZE;
-                if(Math.random() > 0.35) {
-                    createVegetation(tx, noise(tx,tz)+1.8, tz, group);
-                }
+                if(Math.random() > 0.32) createVegetation(tx, noise(tx,tz)+1.5, tz, group);
             }
 
             scene.add(group);
@@ -127,68 +109,88 @@
         }
 
         function createVegetation(x, y, z, parent) {
-            const keys = Object.keys(vegetationTypes);
-            const typeKey = keys[Math.floor(Math.random()*keys.length)];
-            const cfg = vegetationTypes[typeKey];
+            const keys = Object.keys(vegTypes);
+            const cfg = vegTypes[keys[Math.floor(Math.random()*keys.length)]];
 
-            if (cfg.isRock) {
-                const rock = new THREE.Mesh(
-                    new THREE.DodecahedronGeometry(cfg.size[0] + Math.random()*2, 1),
-                    new THREE.MeshLambertMaterial({color: cfg.color})
-                );
-                rock.position.set(x, y + 2, z);
-                parent.add(rock);
+            if (cfg.type === 'bush') {
+                const fmat = new THREE.MeshLambertMaterial({color: cfg.leafC});
+                for(let i=0; i<cfg.layers; i++) {
+                    const bush = new THREE.Mesh(new THREE.SphereGeometry(3.2 - i*0.6, 8, 8), fmat);
+                    bush.position.set(x, y + 1.5 + i*1.8, z);
+                    bush.scale.set(1.4, 0.7, 1.4);
+                    parent.add(bush);
+                }
                 return;
             }
 
-            // Trunk
-            const trunk = new THREE.Mesh(
-                new THREE.CylinderGeometry(cfg.trunkR, cfg.trunkR*1.25, cfg.trunkH, 8),
-                new THREE.MeshLambertMaterial({color: cfg.trunkColor})
-            );
-            trunk.position.set(x, y + cfg.trunkH/2, z);
-            parent.add(trunk);
-
-            // Foliage
-            const fmat = new THREE.MeshLambertMaterial({color: cfg.foliageColor});
-            for(let i=0; i<cfg.layers; i++) {
-                const cone = new THREE.Mesh(
-                    new THREE.ConeGeometry(cfg.layerRadius[i], cfg.layerHeight[i], 8),
-                    fmat
+            // Trunk for trees
+            if (cfg.trunkH > 0) {
+                const trunk = new THREE.Mesh(
+                    new THREE.CylinderGeometry(cfg.trunkR, cfg.trunkR*1.3, cfg.trunkH, 8),
+                    new THREE.MeshLambertMaterial({color: cfg.trunkC})
                 );
-                cone.position.set(x, y + cfg.layerOffset[i], z);
-                parent.add(cone);
+                trunk.position.set(x, y + cfg.trunkH/2, z);
+                parent.add(trunk);
             }
 
-            // Simple fruits for fruit trees
-            if (cfg.hasFruit && Math.random() > 0.5) {
-                for(let i=0; i<5; i++) {
-                    const fruit = new THREE.Mesh(
-                        new THREE.SphereGeometry(0.6, 8, 8),
-                        new THREE.MeshLambertMaterial({color: 0xFF2222})
-                    );
-                    fruit.position.set(x + (Math.random()-0.5)*4, y + 10 + Math.random()*4, z + (Math.random()-0.5)*4);
+            const fmat = new THREE.MeshLambertMaterial({color: cfg.leafC});
+            const layerCount = cfg.layers || 3;
+
+            if (cfg.type === 'broad' || cfg.branchy) {
+                // Branchy / rounded canopy for maple & fruit
+                for(let i=0; i<layerCount; i++) {
+                    const canopy = new THREE.Mesh(new THREE.SphereGeometry(4.5 + Math.random()*1.5 - i, 8, 8), fmat);
+                    canopy.position.set(x + (Math.random()-0.5)*1.5, y + 6 + i*3.5, z + (Math.random()-0.5)*1.5);
+                    parent.add(canopy);
+                }
+            } else {
+                // Classic cone for evergreen
+                for(let i=0; i<layerCount; i++) {
+                    const cone = new THREE.Mesh(new THREE.ConeGeometry(5.5 - i*1.2, 7, 8), fmat);
+                    cone.position.set(x, y + 8 + i*4.5, z);
+                    parent.add(cone);
+                }
+            }
+
+            // Fruits
+            if (cfg.fruit) {
+                for(let i=0; i<6; i++) {
+                    const fruit = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 8), new THREE.MeshLambertMaterial({color:0xFF2222}));
+                    fruit.position.set(x+(Math.random()-0.5)*5, y+9+Math.random()*5, z+(Math.random()-0.5)*5);
                     parent.add(fruit);
                 }
             }
         }
 
-        function spawnAnimal(x, z) {
+        function spawnAnimal(x, z) { /* same as before - we can expand later */ 
             const h = noise(x,z) + 4;
             const animal = new THREE.Group();
-            // Body
             animal.add(new THREE.Mesh(new THREE.BoxGeometry(3,2.2,6), new THREE.MeshLambertMaterial({color:0x8B5A2B})));
-            // Head
             const head = new THREE.Mesh(new THREE.SphereGeometry(1.8,8,8), new THREE.MeshLambertMaterial({color:0xA0522D}));
             head.position.set(0,2.8,3); animal.add(head);
-            // Simple ears/horns
-            animal.position.set(x, h, z);
+            animal.position.set(x,h,z);
             animal.userData = {vel:new THREE.Vector3((Math.random()-0.5)*0.7,0,(Math.random()-0.5)*0.7), alive:true, hp:3, bob:0};
             scene.add(animal); animals.push(animal);
         }
 
-        function shoot() { /* unchanged */ 
-            if(ammo<=0) return; ammo--; updateUI();
+        function playGunshot() {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(180, audioCtx.currentTime);
+            gain.gain.setValueAtTime(1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+            osc.connect(gain).connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.45);
+        }
+
+        function shoot() {
+            if(ammo<=0) return;
+            ammo--; updateUI();
+            playGunshot();
+
             const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(0,0), camera);
             const hits = ray.intersectObjects(scene.children, true);
             if(hits.length) {
@@ -197,7 +199,7 @@
                     if(animals.includes(o.parent)) {
                         const a = o.parent; a.userData.hp--;
                         if(a.userData.hp<=0 && a.userData.alive) {
-                            a.userData.alive = false; score+=100; updateUI();
+                            a.userData.alive=false; score+=100; updateUI();
                             a.scale.set(0.6,0.3,0.6);
                             setTimeout(()=>{scene.remove(a); animals.splice(animals.indexOf(a),1);},1000);
                         }
