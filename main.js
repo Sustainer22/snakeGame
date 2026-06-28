@@ -50,7 +50,7 @@ function init() {
         renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    console.log("Generating world...");
+    console.log("Generating initial world...");
     generateChunk(0, 0);
 
     for(let i = 0; i < 14; i++) {
@@ -60,26 +60,23 @@ function init() {
     }
 
     camera.position.set(0, 35, 70);
-    console.log("Camera at", camera.position);
 
     updateUI();
     animate();
-    console.log("=== Game started ===");
+    console.log("=== Game started successfully ===");
 }
 
-// Missing spawnAnimal function
+// Spawn animal function
 function spawnAnimal(x, z) {
     const h = noise(x, z) + 4;
     const animal = new THREE.Group();
     
-    // Body
     const body = new THREE.Mesh(
         new THREE.BoxGeometry(3, 2.2, 6),
         new THREE.MeshLambertMaterial({color: 0x8B5A2B})
     );
     animal.add(body);
     
-    // Head
     const head = new THREE.Mesh(
         new THREE.SphereGeometry(1.8, 8, 8),
         new THREE.MeshLambertMaterial({color: 0xA0522D})
