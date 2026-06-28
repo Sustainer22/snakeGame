@@ -8,38 +8,52 @@
         canvas { display: block; }
         #ui {
             position: absolute; top: 10px; left: 10px; color: white; pointer-events: none;
-            text-shadow: 0 0 5px black;
+            text-shadow: 0 0 5px black; z-index: 100;
         }
-        #crosshair { position: absolute; top: 50%; left: 50%; font-size: 30px; transform: translate(-50%, -50%); pointer-events: none; }
+        #crosshair { 
+            position: absolute; top: 50%; left: 50%; font-size: 30px; 
+            transform: translate(-50%, -50%); pointer-events: none; color: white;
+            text-shadow: 0 0 8px black; z-index: 100;
+        }
         #instructions {
             position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
             background: rgba(0,0,0,0.7); color: white; padding: 10px 20px; border-radius: 8px;
-            text-align: center; pointer-events: none;
+            text-align: center; pointer-events: none; z-index: 100;
         }
-        #ammo { position: absolute; bottom: 80px; right: 20px; color: white; font-size: 24px; }
+        #ammo { 
+            position: absolute; bottom: 80px; right: 20px; color: white; 
+            font-size: 24px; text-shadow: 0 0 5px black; z-index: 100;
+        }
+        #score {
+            position: absolute; top: 10px; right: 20px; color: #ffcc00; 
+            font-size: 28px; text-shadow: 0 0 8px black; z-index: 100;
+        }
     </style>
 </head>
 <body>
     <div id="ui">
-        <div>INFINITE WILDS</div>
-        <div>WASD - Move | Mouse - Look | Click - Shoot | R - Reload</div>
+        <div style="font-size: 18px;">INFINITE WILDS</div>
+        <div>WASD - Move | Mouse - Look | Left Click - Shoot | R - Reload</div>
     </div>
+    <div id="score">Score: 0</div>
     <div id="crosshair">+</div>
     <div id="ammo">Ammo: <span id="ammoCount">30</span>/∞</div>
     <div id="instructions">
-        Click to lock pointer and start walking<br>
-        Explore the endless wilderness • Hunt animals for points
+        Click to lock pointer and begin your journey<br>
+        Explore the endless wilderness • Hunt animals
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/controls/PointerLockControls.min.js"></script>
 
     <script>
-        // Simple noise function (simplex-like)
+        // Improved noise function
         function noise(x, z) {
-            let n = Math.sin(x * 0.1) + Math.sin(z * 0.1) + 
-                    Math.sin((x + z) * 0.05) * 2;
-            return n * 8;
+            let n = Math.sin(x * 0.03) * 12 + 
+                    Math.sin(z * 0.03) * 12 +
+                    Math.sin((x + z) * 0.015) * 8 +
+                    Math.sin(x * 0.08) * 3;
+            return n;
         }
 
         let scene, camera, renderer, controls;
@@ -47,58 +61,43 @@
         let velocity = new THREE.Vector3();
         let direction = new THREE.Vector3();
         let animals = [];
-        let trees = [];
         let chunks = new Map();
-        let playerPosition = new THREE.Vector3(0, 10, 0);
         let score = 0;
         let ammo = 30;
-        const CHUNK_SIZE = 64;
-        const RENDER_DISTANCE = 3;
+        const CHUNK_SIZE = 128;
+        const RENDER_DISTANCE = 6; // Much farther view
 
         function init() {
             scene = new THREE.Scene();
-            scene.fog = new THREE.Fog(0x88ccff, 100, 600);
+            scene.fog = new THREE.Fog(0x88aaff, 300, 1200);
 
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 2000);
             
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setClearColor(0x88ccff);
+            renderer.setClearColor(0x88aaff);
             document.body.appendChild(renderer.domElement);
 
-            // Lighting
-            const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+            const ambient = new THREE.AmbientLight(0xffffff, 0.65);
             scene.add(ambient);
-            const sun = new THREE.DirectionalLight(0xffeecc, 1);
-            sun.position.set(50, 100, 30);
+            const sun = new THREE.DirectionalLight(0xffeedd, 1.1);
+            sun.position.set(80, 120, 60);
             scene.add(sun);
 
-            // Ground material
-            const groundMat = new THREE.MeshLambertMaterial({ color: 0x3a5f3a });
-
-            // Controls
             controls = new THREE.PointerLockControls(camera, document.body);
             
-            document.addEventListener('click', () => {
-                controls.lock();
-            });
+            document.addEventListener('click', () => controls.lock());
 
-            controls.addEventListener('lock', () => {
-                document.getElementById('instructions').style.display = 'none';
-            });
+            controls.addEventListener('lock', () => document.getElementById('instructions').style.display = 'none');
+            controls.addEventListener('unlock', () => document.getElementById('instructions').style.display = 'block');
 
-            controls.addEventListener('unlock', () => {
-                document.getElementById('instructions').style.display = 'block';
-            });
-
-            // Keyboard controls
             document.addEventListener('keydown', e => {
                 switch(e.code) {
                     case 'KeyW': move.forward = true; break;
                     case 'KeyS': move.backward = true; break;
                     case 'KeyA': move.left = true; break;
                     case 'KeyD': move.right = true; break;
-                    case 'KeyR': ammo = 30; updateAmmo(); break;
+                    case 'KeyR': ammo = 30; updateUI(); break;
                 }
             });
 
@@ -111,7 +110,6 @@
                 }
             });
 
-            // Mouse shoot
             document.addEventListener('mousedown', e => {
                 if (controls.isLocked && e.button === 0) shoot();
             });
@@ -122,71 +120,55 @@
                 renderer.setSize(window.innerWidth, window.innerHeight);
             });
 
-            // Initial chunk
             generateChunk(0, 0);
             
-            // Spawn some initial animals
-            for(let i = 0; i < 8; i++) {
-                spawnAnimal(Math.random()*100 - 50, Math.random()*100 - 50);
+            for(let i = 0; i < 12; i++) {
+                const dist = 40 + Math.random() * 120;
+                const angle = Math.random() * Math.PI * 2;
+                spawnAnimal(Math.cos(angle) * dist, Math.sin(angle) * dist);
             }
 
-            camera.position.set(0, 12, 30);
+            camera.position.set(5, 25, 40);
+            updateUI();
             animate();
         }
 
-        function getChunkKey(x, z) {
-            return `${Math.floor(x / CHUNK_SIZE)},${Math.floor(z / CHUNK_SIZE)}`;
+        function getChunkKey(cx, cz) {
+            return `${cx},${cz}`;
         }
 
         function generateChunk(cx, cz) {
-            const key = `${cx},${cz}`;
+            const key = getChunkKey(cx, cz);
             if (chunks.has(key)) return;
             
             const chunkGroup = new THREE.Group();
             
-            // Terrain mesh
-            const geometry = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, 32, 32);
+            const geometry = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, 48, 48);
             geometry.rotateX(-Math.PI / 2);
             
             const vertices = geometry.attributes.position.array;
             for (let i = 0; i < vertices.length; i += 3) {
-                const x = vertices[i];
-                const z = vertices[i + 2];
-                const worldX = cx * CHUNK_SIZE + x;
-                const worldZ = cz * CHUNK_SIZE + z;
-                vertices[i + 1] = noise(worldX, worldZ);
+                const x = vertices[i] + cx * CHUNK_SIZE;
+                const z = vertices[i + 2] + cz * CHUNK_SIZE;
+                vertices[i + 1] = noise(x, z);
             }
             geometry.computeVertexNormals();
             
             const terrain = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ 
-                color: 0x2d4a2d,
-                flatShading: true
+                color: 0x356b35,
+                flatShading: false
             }));
             terrain.position.set(cx * CHUNK_SIZE, 0, cz * CHUNK_SIZE);
             chunkGroup.add(terrain);
             
-            // Trees
-            for (let i = 0; i < 25; i++) {
+            // Sparser, more spread-out trees
+            for (let i = 0; i < 18; i++) {
                 const tx = cx * CHUNK_SIZE + Math.random() * CHUNK_SIZE;
                 const tz = cz * CHUNK_SIZE + Math.random() * CHUNK_SIZE;
                 const height = noise(tx, tz);
-                if (Math.random() > 0.4) {
-                    createTree(tx, height + 1, tz, chunkGroup);
+                if (Math.random() > 0.35) {
+                    createTree(tx, height + 1.5, tz, chunkGroup);
                 }
-            }
-            
-            // Paths / rocks
-            if (Math.random() > 0.6) {
-                const rock = new THREE.Mesh(
-                    new THREE.SphereGeometry(2 + Math.random() * 3, 8, 8),
-                    new THREE.MeshLambertMaterial({ color: 0x555555 })
-                );
-                rock.position.set(
-                    cx * CHUNK_SIZE + CHUNK_SIZE/2 + (Math.random()-0.5)*CHUNK_SIZE,
-                    2,
-                    cz * CHUNK_SIZE + CHUNK_SIZE/2 + (Math.random()-0.5)*CHUNK_SIZE
-                );
-                chunkGroup.add(rock);
             }
             
             scene.add(chunkGroup);
@@ -194,50 +176,48 @@
         }
 
         function createTree(x, y, z, parent) {
-            // Trunk
             const trunk = new THREE.Mesh(
-                new THREE.CylinderGeometry(1.2, 1.5, 8, 8),
-                new THREE.MeshLambertMaterial({ color: 0x8B4513 })
+                new THREE.CylinderGeometry(1.1, 1.6, 7 + Math.random() * 4, 8),
+                new THREE.MeshLambertMaterial({ color: 0x6B4E3D })
             );
             trunk.position.set(x, y + 4, z);
             parent.add(trunk);
             
-            // Leaves
-            const leaves = new THREE.Mesh(
-                new THREE.ConeGeometry(5, 9, 8),
-                new THREE.MeshLambertMaterial({ color: 0x0d6623 })
-            );
-            leaves.position.set(x, y + 12, z);
-            parent.add(leaves);
-            
-            trees.push({mesh: trunk, x, z});
+            const foliageMat = new THREE.MeshLambertMaterial({ color: 0x1e5c2b });
+            for (let i = 0; i < 3; i++) {
+                const leaves = new THREE.Mesh(
+                    new THREE.ConeGeometry(4.5 - i * 0.6, 7, 8),
+                    foliageMat
+                );
+                leaves.position.set(x, y + 9 + i * 3.5, z);
+                parent.add(leaves);
+            }
         }
 
         function spawnAnimal(x, z) {
             const height = noise(x, z) + 3;
             const animal = new THREE.Group();
             
-            // Body
             const body = new THREE.Mesh(
-                new THREE.BoxGeometry(3, 2, 5),
-                new THREE.MeshLambertMaterial({ color: 0x8B4513 })
+                new THREE.BoxGeometry(2.8, 2.2, 5.5),
+                new THREE.MeshLambertMaterial({ color: 0x8B5A2B })
             );
-            body.position.y = height + 2;
+            body.position.y = 2.5;
             animal.add(body);
             
-            // Head
             const head = new THREE.Mesh(
-                new THREE.SphereGeometry(1.8, 8, 8),
+                new THREE.SphereGeometry(1.6, 8, 8),
                 new THREE.MeshLambertMaterial({ color: 0xA0522D })
             );
-            head.position.set(0, 2.5, 2.5);
+            head.position.set(0, 3.2, 2.8);
             animal.add(head);
             
-            animal.position.set(x, 0, z);
+            animal.position.set(x, height, z);
             animal.userData = { 
-                velocity: new THREE.Vector3((Math.random()-0.5)*0.8, 0, (Math.random()-0.5)*0.8),
+                velocity: new THREE.Vector3((Math.random()-0.5)*0.6, 0, (Math.random()-0.5)*0.6),
                 alive: true,
-                health: 3
+                health: 3,
+                bob: 0
             };
             
             scene.add(animal);
@@ -247,7 +227,7 @@
         function shoot() {
             if (ammo <= 0) return;
             ammo--;
-            updateAmmo();
+            updateUI();
             
             const raycaster = new THREE.Raycaster();
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
@@ -263,11 +243,13 @@
                         if (animal.userData.health <= 0 && animal.userData.alive) {
                             animal.userData.alive = false;
                             score += 100;
-                            // Simple death animation
-                            animal.scale.set(0.6, 0.6, 0.6);
+                            updateUI();
+                            animal.scale.set(0.7, 0.4, 0.7);
                             setTimeout(() => {
-                                if (animal.parent) scene.remove(animal);
-                            }, 800);
+                                scene.remove(animal);
+                                const idx = animals.indexOf(animal);
+                                if (idx > -1) animals.splice(idx, 1);
+                            }, 1200);
                         }
                         break;
                     }
@@ -276,8 +258,9 @@
             }
         }
 
-        function updateAmmo() {
+        function updateUI() {
             document.getElementById('ammoCount').textContent = ammo;
+            document.getElementById('score').textContent = `Score: ${score}`;
         }
 
         function updateChunks() {
@@ -289,8 +272,6 @@
                     generateChunk(x, z);
                 }
             }
-            
-            // Cleanup far chunks (optional, simplified)
         }
 
         function updateAnimals(delta) {
@@ -298,34 +279,30 @@
                 const a = animals[i];
                 if (!a.userData.alive) continue;
                 
-                // Wander
-                a.position.x += a.userData.velocity.x * delta * 12;
-                a.position.z += a.userData.velocity.z * delta * 12;
+                a.position.x += a.userData.velocity.x * delta * 18;
+                a.position.z += a.userData.velocity.z * delta * 18;
                 
-                // Stay near ground
-                const groundY = noise(a.position.x, a.position.z) + 2;
-                a.position.y = groundY;
+                const groundY = noise(a.position.x, a.position.z) + 3;
+                a.position.y = groundY + Math.sin(a.userData.bob += delta * 4) * 0.3;
                 
-                // Bounce off edges loosely
-                if (Math.random() < 0.02) {
-                    a.userData.velocity.x = (Math.random() - 0.5) * 1.2;
-                    a.userData.velocity.z = (Math.random() - 0.5) * 1.2;
+                if (Math.random() < 0.015) {
+                    a.userData.velocity.set((Math.random() - 0.5) * 1.1, 0, (Math.random() - 0.5) * 1.1);
                 }
                 
-                // Respawn distant animals
                 const dx = a.position.x - camera.position.x;
                 const dz = a.position.z - camera.position.z;
-                if (dx * dx + dz * dz > 800 * 800) {
+                if (dx*dx + dz*dz > 900*900) {
                     scene.remove(a);
                     animals.splice(i, 1);
-                    spawnAnimal(camera.position.x + (Math.random()-0.5)*300, camera.position.z + (Math.random()-0.5)*300);
+                    const spawnDist = 120 + Math.random() * 200;
+                    const angle = Math.random() * Math.PI * 2;
+                    spawnAnimal(camera.position.x + Math.cos(angle) * spawnDist, camera.position.z + Math.sin(angle) * spawnDist);
                 }
             }
         }
 
         function animate() {
             requestAnimationFrame(animate);
-            
             const delta = 0.016;
             
             if (controls.isLocked) {
@@ -333,17 +310,13 @@
                 direction.x = Number(move.right) - Number(move.left);
                 direction.normalize();
                 
-                velocity.x = direction.x * 45 * delta;
-                velocity.z = direction.z * 45 * delta;
+                const speed = 55;
+                controls.moveRight(direction.x * speed * delta);
+                controls.moveForward(direction.z * speed * delta);
                 
-                controls.moveRight(velocity.x);
-                controls.moveForward(velocity.z);
-                
-                // Keep player above terrain
-                const terrainY = noise(camera.position.x, camera.position.z) + 8;
-                if (camera.position.y < terrainY) {
-                    camera.position.y = terrainY;
-                }
+                // Proper terrain following (gravity fix)
+                const terrainHeight = noise(camera.position.x, camera.position.z) + 9;
+                if (camera.position.y < terrainHeight) camera.position.y = terrainHeight;
                 
                 updateChunks();
                 updateAnimals(delta);
@@ -352,7 +325,6 @@
             renderer.render(scene, camera);
         }
 
-        // Start the game
         init();
     </script>
 </body>
