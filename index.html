@@ -2,128 +2,163 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Infinite Wilds - Procedural 3D Open World</title>
+    <title>Infinite Wilds</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: Arial, sans-serif; }
-        canvas { display: block; }
-        #ui { position: absolute; top: 10px; left: 10px; color: white; pointer-events: none; text-shadow: 0 0 5px black; z-index: 100; }
-        #crosshair { position: absolute; top: 50%; left: 50%; font-size: 30px; transform: translate(-50%, -50%); pointer-events: none; color: white; text-shadow: 0 0 8px black; z-index: 100; }
-        #instructions { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: white; padding: 10px 20px; border-radius: 8px; text-align: center; pointer-events: none; z-index: 100; }
-        #ammo { position: absolute; bottom: 80px; right: 20px; color: white; font-size: 24px; text-shadow: 0 0 5px black; z-index: 100; }
-        #score { position: absolute; top: 10px; right: 20px; color: #ffcc00; font-size: 28px; text-shadow: 0 0 8px black; z-index: 100; }
+        body { margin:0; overflow:hidden; background:#000; font-family:Arial, sans-serif; }
+        canvas { display:block; }
+        #ui { position:absolute; top:10px; left:10px; color:white; pointer-events:none; text-shadow:0 0 5px black; z-index:100; }
+        #crosshair { position:absolute; top:50%; left:50%; font-size:32px; transform:translate(-50%,-50%); color:white; text-shadow:0 0 8px black; pointer-events:none; z-index:100; }
+        #score { position:absolute; top:10px; right:20px; color:#ffcc00; font-size:28px; text-shadow:0 0 8px black; z-index:100; }
+        #ammo { position:absolute; bottom:80px; right:20px; color:white; font-size:24px; text-shadow:0 0 5px black; z-index:100; }
+        #instructions { position:absolute; bottom:30px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.75); color:white; padding:12px 24px; border-radius:8px; text-align:center; z-index:100; }
     </style>
 </head>
 <body>
-    <div id="ui"><div style="font-size:18px;">INFINITE WILDS</div><div>WASD Move | Mouse Look | L-Click Shoot | R Reload</div></div>
+    <div id="ui">INFINITE WILDS<br>WASD Move • Mouse Look • Click Shoot • R Reload</div>
     <div id="score">Score: 0</div>
     <div id="crosshair">+</div>
     <div id="ammo">Ammo: <span id="ammoCount">30</span>/∞</div>
-    <div id="instructions">Click to play<br>Explore • Hunt</div>
+    <div id="instructions">Click screen to start</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/controls/PointerLockControls.min.js"></script>
-    <script src="objects.js"></script>
 
     <script>
         function noise(x, z) {
-            return Math.sin(x * 0.015)*18 + Math.sin(z * 0.015)*18 + Math.sin((x+z)*0.008)*12 + Math.sin(x*0.04)*5;
+            return Math.sin(x*0.012)*22 + Math.sin(z*0.012)*22 + Math.sin((x+z)*0.007)*14;
         }
 
-        let scene, camera, renderer, controls, move = {}, animals = [], chunks = new Map();
+        let scene, camera, renderer, controls;
+        let move = {f:false, b:false, l:false, r:false};
+        let animals = [], chunks = new Map();
         let score = 0, ammo = 30;
-        const CHUNK_SIZE = 160, RENDER_DISTANCE = 12;
+        const CHUNK_SIZE = 180, RENDER_DISTANCE = 10;
+
+        const treeConfigs = [
+            {tr:1.4, th:12, tc:0x5C4033, fc:0x0F4C2B, layers:[{r:5.8,h:8,y:10},{r:4.3,h:7,y:14},{r:3,h:5.5,y:18}]},
+            {tr:1.9, th:9, tc:0x6B4E3D, fc:0x1e5c2b, layers:[{r:7,h:6,y:9},{r:5.5,h:5.5,y:13},{r:4,h:5,y:16}]},
+            {tr:1.1, th:15, tc:0x4A3728, fc:0x0d3d22, layers:[{r:4.5,h:9,y:11},{r:3.5,h:7,y:16},{r:2.4,h:6,y:21}]}
+        ];
 
         function init() {
-            scene = new THREE.Scene(); scene.fog = new THREE.Fog(0x88aaff, 400, 1600);
-            camera = new THREE.PerspectiveCamera(68, innerWidth/innerHeight, 0.1, 2500);
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x88aaff, 450, 1700);
+
+            camera = new THREE.PerspectiveCamera(68, innerWidth/innerHeight, 0.1, 3000);
             renderer = new THREE.WebGLRenderer({antialias:true});
-            renderer.setSize(innerWidth, innerHeight); renderer.setClearColor(0x88aaff);
+            renderer.setSize(innerWidth, innerHeight);
+            renderer.setClearColor(0x88aaff);
             document.body.appendChild(renderer.domElement);
 
             scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-            const sun = new THREE.DirectionalLight(0xffeedd, 1.15); sun.position.set(100,150,80); scene.add(sun);
+            const sun = new THREE.DirectionalLight(0xffeedd, 1.2); sun.position.set(120, 180, 90); scene.add(sun);
 
             controls = new THREE.PointerLockControls(camera, document.body);
             document.addEventListener('click', () => controls.lock());
-            controls.addEventListener('lock', () => document.getElementById('instructions').style.display = 'none');
-            controls.addEventListener('unlock', () => document.getElementById('instructions').style.display = 'block');
 
-            // Controls...
-            document.addEventListener('keydown', e => { if (e.code==='KeyW') move.forward=true; if (e.code==='KeyS') move.backward=true; if (e.code==='KeyA') move.left=true; if (e.code==='KeyD') move.right=true; if (e.code==='KeyR') {ammo=30; updateUI();} });
-            document.addEventListener('keyup', e => { if (e.code==='KeyW') move.forward=false; if (e.code==='KeyS') move.backward=false; if (e.code==='KeyA') move.left=false; if (e.code==='KeyD') move.right=false; });
-            document.addEventListener('mousedown', e => { if (controls.isLocked && e.button===0) shoot(); });
+            controls.addEventListener('lock', () => document.getElementById('instructions').style.display='none');
+            controls.addEventListener('unlock', () => document.getElementById('instructions').style.display='block');
 
-            window.addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+            document.addEventListener('keydown', e => {
+                if(e.code==='KeyW') move.f=true;
+                if(e.code==='KeyS') move.b=true;
+                if(e.code==='KeyA') move.l=true;
+                if(e.code==='KeyD') move.r=true;
+                if(e.code==='KeyR') {ammo=30; updateUI();}
+            });
+            document.addEventListener('keyup', e => {
+                if(e.code==='KeyW') move.f=false;
+                if(e.code==='KeyS') move.b=false;
+                if(e.code==='KeyA') move.l=false;
+                if(e.code==='KeyD') move.r=false;
+            });
+            document.addEventListener('mousedown', e => { if(controls.isLocked && e.button===0) shoot(); });
+
+            window.addEventListener('resize', () => {
+                camera.aspect = innerWidth/innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(innerWidth, innerHeight);
+            });
 
             generateChunk(0,0);
-            for(let i=0;i<15;i++) {
-                const d=60+Math.random()*180, a=Math.random()*Math.PI*2;
+            for(let i=0; i<14; i++) {
+                const d = 80 + Math.random()*160;
+                const a = Math.random()*Math.PI*2;
                 spawnAnimal(Math.cos(a)*d, Math.sin(a)*d);
             }
 
-            camera.position.set(0,30,50);
+            camera.position.set(0, 25, 60);
             updateUI();
             animate();
         }
 
         function generateChunk(cx, cz) {
-            const key = `${cx},${cz}`; if (chunks.has(key)) return;
-            const g = new THREE.Group();
-            const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, 52, 52); geo.rotateX(-Math.PI/2);
+            const key = `${cx},${cz}`; if(chunks.has(key)) return;
+            const group = new THREE.Group();
+
+            const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, 48, 48);
+            geo.rotateX(-Math.PI/2);
             const verts = geo.attributes.position.array;
-            for(let i=0;i<verts.length;i+=3){
-                const x=verts[i]+cx*CHUNK_SIZE, z=verts[i+2]+cz*CHUNK_SIZE;
-                verts[i+1] = noise(x,z);
+            for(let i=0; i<verts.length; i+=3) {
+                const x = verts[i] + cx*CHUNK_SIZE;
+                const z = verts[i+2] + cz*CHUNK_SIZE;
+                verts[i+1] = noise(x, z);
             }
             geo.computeVertexNormals();
-            g.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({color:0x2f5f2f})));
-            
-            for(let i=0;i<5;i++) {
+            group.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({color:0x2f5f2f})));
+
+            // Very sparse trees
+            for(let i=0; i<6; i++) {
                 const tx = cx*CHUNK_SIZE + Math.random()*CHUNK_SIZE;
                 const tz = cz*CHUNK_SIZE + Math.random()*CHUNK_SIZE;
-                if (Math.random() > 0.4) createTree(tx, noise(tx,tz)+2, tz, g, Math.floor(Math.random()*3));
+                if(Math.random() > 0.45) createTree(tx, noise(tx,tz)+2, tz, group);
             }
-            scene.add(g); chunks.set(key,g);
+
+            scene.add(group);
+            chunks.set(key, group);
         }
 
-        function createTree(x,y,z,parent,typeIndex) {
-            const types = Object.values(treeTypes);
-            buildTreeFromConfig(x,y,z,parent, types[typeIndex]);
-        }
+        function createTree(x, y, z, parent) {
+            const cfg = treeConfigs[Math.floor(Math.random()*treeConfigs.length)];
+            const trunk = new THREE.Mesh(
+                new THREE.CylinderGeometry(cfg.tr, cfg.tr*1.25, cfg.th, 8),
+                new THREE.MeshLambertMaterial({color: cfg.tc})
+            );
+            trunk.position.set(x, y + cfg.th/2, z);
+            parent.add(trunk);
 
-        function buildTreeFromConfig(x,y,z,parent,cfg) {
-            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(cfg.trunkRadius, cfg.trunkRadius*1.3, cfg.trunkHeight,8), new THREE.MeshLambertMaterial({color:cfg.trunkColor}));
-            trunk.position.set(x, y + cfg.trunkHeight/2, z); parent.add(trunk);
-            const mat = new THREE.MeshLambertMaterial({color:cfg.foliageColor});
+            const fmat = new THREE.MeshLambertMaterial({color: cfg.fc});
             cfg.layers.forEach(l => {
-                const leaf = new THREE.Mesh(new THREE.ConeGeometry(l.radius, l.height,8), mat);
-                leaf.position.set(x, y + l.yOffset, z); parent.add(leaf);
+                const leaf = new THREE.Mesh(new THREE.ConeGeometry(l.r, l.h, 8), fmat);
+                leaf.position.set(x, y + l.y, z);
+                parent.add(leaf);
             });
         }
 
-        function spawnAnimal(x,z) { /* same as before */ 
-            const h = noise(x,z)+3; const a = new THREE.Group();
-            a.add(new THREE.Mesh(new THREE.BoxGeometry(2.8,2.2,5.5), new THREE.MeshLambertMaterial({color:0x8B5A2B}))); // body
+        function spawnAnimal(x, z) {
+            const h = noise(x,z) + 4;
+            const animal = new THREE.Group();
+            animal.add(new THREE.Mesh(new THREE.BoxGeometry(2.8,2.2,5.5), new THREE.MeshLambertMaterial({color:0x8B5A2B})));
             const head = new THREE.Mesh(new THREE.SphereGeometry(1.6,8,8), new THREE.MeshLambertMaterial({color:0xA0522D}));
-            head.position.set(0,3.2,2.8); a.add(head);
-            a.position.set(x,h,z);
-            a.userData = {velocity: new THREE.Vector3((Math.random()-0.5)*0.6,0,(Math.random()-0.5)*0.6), alive:true, health:3, bob:0};
-            scene.add(a); animals.push(a);
+            head.position.set(0,3.2,2.8); animal.add(head);
+            animal.position.set(x,h,z);
+            animal.userData = {vel: new THREE.Vector3((Math.random()-0.5)*0.7,0,(Math.random()-0.5)*0.7), alive:true, hp:3, bob:0};
+            scene.add(animal); animals.push(animal);
         }
 
-        function shoot() { /* same shooting logic as previous version */ 
+        function shoot() {
             if(ammo<=0) return; ammo--; updateUI();
-            const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(), camera);
+            const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(0,0), camera);
             const hits = ray.intersectObjects(scene.children, true);
             if(hits.length) {
                 let o = hits[0].object;
                 while(o) {
                     if(animals.includes(o.parent)) {
-                        const animal = o.parent; animal.userData.health--;
-                        if(animal.userData.health<=0 && animal.userData.alive) {
-                            animal.userData.alive=false; score+=100; updateUI();
-                            animal.scale.set(0.7,0.4,0.7);
-                            setTimeout(()=>{scene.remove(animal); animals.splice(animals.indexOf(animal),1);},1200);
+                        const a = o.parent; a.userData.hp--;
+                        if(a.userData.hp <= 0 && a.userData.alive) {
+                            a.userData.alive = false; score += 100; updateUI();
+                            a.scale.set(0.6,0.3,0.6);
+                            setTimeout(() => { scene.remove(a); animals.splice(animals.indexOf(a),1); }, 1000);
                         }
                         break;
                     }
@@ -138,41 +173,41 @@
         }
 
         function updateChunks() {
-            const cx = Math.floor(camera.position.x / CHUNK_SIZE), cz = Math.floor(camera.position.z / CHUNK_SIZE);
-            for(let x=cx-RENDER_DISTANCE; x<=cx+RENDER_DISTANCE; x++)
-                for(let z=cz-RENDER_DISTANCE; z<=cz+RENDER_DISTANCE; z++)
-                    generateChunk(x,z);
-        }
-
-        function updateAnimals(delta) { /* same as before */ 
-            for(let i=animals.length-1;i>=0;i--) {
-                const a=animals[i]; if(!a.userData.alive) continue;
-                a.position.x += a.userData.velocity.x * delta *18;
-                a.position.z += a.userData.velocity.z * delta *18;
-                const gy = noise(a.position.x, a.position.z)+3;
-                a.position.y = gy + Math.sin(a.userData.bob += delta*4)*0.3;
-                if(Math.random()<0.015) a.userData.velocity.set((Math.random()-0.5)*1.1,0,(Math.random()-0.5)*1.1);
-                const dx=a.position.x-camera.position.x, dz=a.position.z-camera.position.z;
-                if(dx*dx+dz*dz > 1100*1100) {
-                    scene.remove(a); animals.splice(i,1);
-                    const d=180+Math.random()*220, ang=Math.random()*Math.PI*2;
-                    spawnAnimal(camera.position.x+Math.cos(ang)*d, camera.position.z+Math.sin(ang)*d);
+            const cx = Math.floor(camera.position.x / CHUNK_SIZE);
+            const cz = Math.floor(camera.position.z / CHUNK_SIZE);
+            for(let x = cx - RENDER_DISTANCE; x <= cx + RENDER_DISTANCE; x++) {
+                for(let z = cz - RENDER_DISTANCE; z <= cz + RENDER_DISTANCE; z++) {
+                    generateChunk(x, z);
                 }
             }
         }
 
+        function updateAnimals(delta) {
+            for(let i=animals.length-1; i>=0; i--) {
+                const a = animals[i];
+                if(!a.userData.alive) continue;
+                a.position.x += a.userData.vel.x * delta * 20;
+                a.position.z += a.userData.vel.z * delta * 20;
+                a.position.y = noise(a.position.x, a.position.z) + 3 + Math.sin(a.userData.bob += delta*5) * 0.4;
+                if(Math.random()<0.02) a.userData.vel.set((Math.random()-0.5)*1.2, 0, (Math.random()-0.5)*1.2);
+            }
+        }
+
         function animate() {
-            requestAnimationFrame(animate); const delta=0.016;
+            requestAnimationFrame(animate);
+            const delta = 0.016;
             if(controls.isLocked) {
-                const dir = new THREE.Vector3(Number(move.right)-Number(move.left), 0, Number(move.forward)-Number(move.backward)).normalize();
-                controls.moveRight(dir.x * 58 * delta);
-                controls.moveForward(dir.z * 58 * delta);
+                const dx = (move.r ? 1 : 0) - (move.l ? 1 : 0);
+                const dz = (move.f ? 1 : 0) - (move.b ? 1 : 0);
+                const len = Math.sqrt(dx*dx + dz*dz) || 1;
+                controls.moveRight(dx/len * 62 * delta);
+                controls.moveForward(dz/len * 62 * delta);
 
-                const th = noise(camera.position.x, camera.position.z) + 9.5;
+                const th = noise(camera.position.x, camera.position.z) + 10;
                 if(camera.position.y < th) camera.position.y = th;
-                else if(camera.position.y > th + 3) camera.position.y -= 0.8;
 
-                updateChunks(); updateAnimals(delta);
+                updateChunks();
+                updateAnimals(delta);
             }
             renderer.render(scene, camera);
         }
