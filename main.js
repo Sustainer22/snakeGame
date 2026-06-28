@@ -1,3 +1,4 @@
+// ==================== FULL MAIN.JS ====================
 let scene, camera, renderer, controls;
 let move = {f:false, b:false, l:false, r:false};
 let animals = [], chunks = new Map();
