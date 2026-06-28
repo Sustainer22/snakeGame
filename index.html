@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Snake Garden Explorer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="game-shell">
+    <canvas id="worldCanvas"></canvas>
+    <div id="hud">
+      <div class="stats">
+        <div>Health: <span id="healthValue">100</span>%</div>
+        <div>Friends: <span id="snakeCount">0</span></div>
+        <div>Speed: <span id="speedValue">Normal</span></div>
+      </div>
+      <div id="message">Explore the endless snake garden. Use arrow keys or WASD to move.</div>
+      <div class="controls">
+        <button id="audioButton">Enable Sound</button>
+        <button id="resetButton">Reset Adventure</button>
+      </div>
+    </div>
+    <div id="instructions">
+      <h1>Snake Garden Explorer</h1>
+      <p>Discover an endless world of flowers, streams, caves, and gentle snakes. Friendly snakes heal you and help chase away mean snakes.</p>
+      <p>Follow the glowing surprises and listen for the soft woodland sounds.</p>
+      <ul>
+        <li><strong>Move:</strong> Arrow keys or WASD</li>
+        <li><strong>Goal:</strong> Explore forever, heal with nice snakes, and survive mean snake bites</li>
+      </ul>
+    </div>
+  </div>
+  <script src="game.js"></script>
+</body>
+</html>
